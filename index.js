@@ -33,6 +33,7 @@ async function run() {
 
     // All Collection
     const mealCollection = client.db("mealMasterDB").collection("meals");
+    const userCollection = client.db("mealMasterDB").collection("users");
 
     // All Meals
     app.get("/api/v1/meals", async (req, res) => {
@@ -75,6 +76,18 @@ async function run() {
         console.error("Error in /api/v1/meals:", error);
         res.status(500).send({ error: "Internal Server Error" });
       }
+    });
+
+    // Add User With User Role
+    app.post("/api/v1/auth/users", async (req, res) => {
+      const user = req.body;
+      const query = { userEmail: user.userEmail };
+      const userExists = await userCollection.findOne(query);
+      if (userExists) {
+        return res.send({ message: "user already exists", insertedId: null });
+      }
+      const result = await userCollection.insertOne(user);
+      res.send(result);
     });
 
     // Send a ping to confirm a successful connection
