@@ -27,6 +27,21 @@ const client = new MongoClient(uri, {
   },
 });
 
+// JWT Middleware
+const verifyToken = (req, res, next) => {
+  const token = req.cookies.token;
+  if (!token) {
+    return res.status(401).send({ message: "Unauthorized" });
+  }
+  jwt.verify(token, process.env.ACCESS_TOKEN_KEY, (err, decoded) => {
+    if (err) {
+      return res.status(401).send({ message: "Unauthorized" });
+    }
+    req.userJwt = decoded;
+    next();
+  });
+};
+
 async function run() {
   try {
     await client.connect();
@@ -37,6 +52,26 @@ async function run() {
     const membershipCollection = client
       .db("mealMasterDB")
       .collection("membership");
+
+    // JWT Token Create
+    app.post("/api/v1/auth/access-token", async (req, res) => {
+      const user = req.body;
+      const token = jwt.sign(user, process.env.ACCESS_TOKEN_KEY, {
+        expiresIn: "1day",
+      });
+      res
+        .cookie("token", token, {
+          httpOnly: true,
+          secure: true,
+          sameSite: "none",
+        })
+        .send({ success: true });
+    });
+    // JWT Token Cancel
+    app.post("/api/v1/auth/access-cancel", async (req, res) => {
+      const user = req.body;
+      res.clearCookie("token", { maxAge: 0 }).send({ logout: true });
+    });
 
     // All Meals
     app.get("/api/v1/meals", async (req, res) => {
@@ -81,6 +116,19 @@ async function run() {
       }
     });
 
+    // Get Single Meal
+    app.get("/api/v1/meal/:id", verifyToken, async (req, res) => {
+      try {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+        const result = await mealCollection.findOne(query);
+        res.send(result);
+      } catch (error) {
+        console.error("Error in /api/v1/meal/:id", error);
+        res.status(500).send({ error: "Internal Server Error" });
+      }
+    });
+
     // Get Membership Price
     app.get("/api/v1/membership", async (req, res) => {
       try {
@@ -105,6 +153,24 @@ async function run() {
         res.send(result);
       } catch (error) {
         console.error("Error in /api/v1/membership:", error);
+        res.status(500).send({ error: "Internal Server Error" });
+      }
+    });
+
+    // Update Meal Like Count
+    app.post("/api/v1/meal/like-update/:id", verifyToken, async (req, res) => {
+      try {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+        const updateLike = {
+          $inc: {
+            likes: 1,
+          },
+        };
+        const result = await mealCollection.updateOne(query, updateLike);
+        res.send(result);
+      } catch (error) {
+        console.error("Error in /api/v1/meal/like-update:", error);
         res.status(500).send({ error: "Internal Server Error" });
       }
     });
