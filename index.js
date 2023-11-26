@@ -275,6 +275,28 @@ async function run() {
       }
     });
 
+    // Update Meal
+    app.patch(
+      "/api/v1/update-meal/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const id = req.params.id;
+          const query = { _id: new ObjectId(id) };
+          const meal = req.body;
+          const updateMeal = {
+            $set: meal,
+          };
+          const result = await mealCollection.updateOne(query, updateMeal);
+          res.send(result);
+        } catch (error) {
+          console.error("Error in /api/v1/meal/update-meal/id:", error);
+          res.status(500).send({ error: "Internal Server Error" });
+        }
+      }
+    );
+
     // Get Request Meal
     app.get(
       "/api/v1/auth/requested-meal/:email",
