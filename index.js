@@ -203,11 +203,80 @@ async function run() {
           if (email !== req.decoded.email) {
             return res.status(403).send({ message: "forbidden access" });
           }
-          const query = { userEmail: email };
-          const result = await requestedCollection.find(query).toArray();
+
+          const userEmail = { userEmail: email };
+          const userResult = await requestedCollection
+            .find(userEmail)
+            .toArray();
+
+          const mealId = userResult.map((id) => new ObjectId(id.mealId));
+          const mealQuery = { _id: { $in: mealId } };
+
+          const options = {
+            projection: { _id: 1, mealTitle: 1, likes: 1, reviews: 1 },
+          };
+          const getMeal = await mealCollection
+            .find(mealQuery, options)
+            .toArray();
+
+          const requestedMealStatusMap = {};
+          userResult.forEach((item) => {
+            const mealIdString = item.mealId.toString();
+            if (!requestedMealStatusMap[mealIdString]) {
+              requestedMealStatusMap[mealIdString] = [];
+            }
+            requestedMealStatusMap[mealIdString].push({
+              requestedMealId: item._id,
+              status: item.status,
+            });
+          });
+
+          const result = [];
+          getMeal.forEach((meal) => {
+            const mealIdString = meal._id.toString();
+            const requestedMealStatusArray =
+              requestedMealStatusMap[mealIdString] || [];
+
+            requestedMealStatusArray.sort((a, b) => {
+              const customOrder = { Pending: 0, Delivered: 1 };
+              return customOrder[a.status] - customOrder[b.status];
+            });
+
+            requestedMealStatusArray.forEach((requestedMealStatus) => {
+              result.push({ ...meal, requestedMealStatus });
+            });
+          });
+          result.sort((a, b) => {
+            const customOrder = { Pending: 0, Delivered: 1 };
+            return (
+              customOrder[a.requestedMealStatus.status] -
+              customOrder[b.requestedMealStatus.status]
+            );
+          });
+
           res.send(result);
         } catch (error) {
           console.error("Error in /api/v1/auth/requested-meal/email:", error);
+          res.status(500).send({ error: "Internal Server Error" });
+        }
+      }
+    );
+    // Delete Request Meal
+    app.delete(
+      "/api/v1/auth/requested-meal/:id",
+      verifyToken,
+      async (req, res) => {
+        try {
+          const email = req.query.email;
+          if (email !== req.decoded.email) {
+            return res.status(403).send({ message: "forbidden access" });
+          }
+          const id = req.params.id;
+          const query = { _id: new ObjectId(id) };
+          const result = await requestedCollection.deleteOne(query);
+          res.send(result);
+        } catch (error) {
+          console.error("Error in /api/v1/auth/requested-meal/id:", error);
           res.status(500).send({ error: "Internal Server Error" });
         }
       }
