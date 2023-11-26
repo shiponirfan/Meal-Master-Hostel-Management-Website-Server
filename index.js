@@ -50,6 +50,9 @@ async function run() {
     // All Collection
     const mealCollection = client.db("mealMasterDB").collection("meals");
     const userCollection = client.db("mealMasterDB").collection("users");
+    const upcomingMealCollection = client
+      .db("mealMasterDB")
+      .collection("upcoming-meals");
     const paymentCollection = client
       .db("mealMasterDB")
       .collection("payments-history");
@@ -59,6 +62,18 @@ async function run() {
     const membershipCollection = client
       .db("mealMasterDB")
       .collection("membership");
+
+    // Verify Admin
+    const verifyAdmin = async (req, res, next) => {
+      const email = req.decoded.email;
+      const query = { userEmail: email };
+      const user = await userCollection.findOne(query);
+      const isAdmin = user?.userRole === "Admin";
+      if (!isAdmin) {
+        return res.status(403).send({ message: "forbidden access" });
+      }
+      next();
+    };
 
     // JWT Token Create
     app.post("/api/v1/auth/access-token", async (req, res) => {
@@ -123,6 +138,34 @@ async function run() {
       }
     });
 
+    // Add Meal
+    app.post("/api/v1/meal", verifyToken, verifyAdmin, async (req, res) => {
+      try {
+        const query = req.body;
+        const result = await mealCollection.insertOne(query);
+        res.send(result);
+      } catch (error) {
+        console.error("Error in /api/v1/meal", error);
+        res.status(500).send({ error: "Internal Server Error" });
+      }
+    });
+    // Add Upcoming Meal
+    app.post(
+      "/api/v1/upcoming-meal",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const query = req.body;
+          const result = await upcomingMealCollection.insertOne(query);
+          res.send(result);
+        } catch (error) {
+          console.error("Error in /api/v1/upcoming-meal", error);
+          res.status(500).send({ error: "Internal Server Error" });
+        }
+      }
+    );
+
     // Get Single Meal
     app.get("/api/v1/meal/:id", verifyToken, async (req, res) => {
       try {
@@ -163,6 +206,45 @@ async function run() {
         res.status(500).send({ error: "Internal Server Error" });
       }
     });
+
+    // Get All User With User Role
+    app.get(
+      "/api/v1/auth/users",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const result = await userCollection.find().toArray();
+          res.send(result);
+        } catch (error) {
+          console.error("Error in /api/v1/auth/users:", error);
+          res.status(500).send({ error: "Internal Server Error" });
+        }
+      }
+    );
+
+    // Users Make Admin
+    app.patch(
+      "/api/v1/auth/make-admin/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const id = req.params.id;
+          const filter = { _id: new ObjectId(id) };
+          const updateDoc = {
+            $set: {
+              userRole: "Admin",
+            },
+          };
+          const result = await userCollection.updateOne(filter, updateDoc);
+          res.send(result);
+        } catch (error) {
+          console.error("Error in /api/v1//auth/make-admin/id:", error);
+          res.status(500).send({ error: "Internal Server Error" });
+        }
+      }
+    );
 
     // Add User With User Role
     app.post("/api/v1/auth/users", async (req, res) => {
@@ -277,6 +359,24 @@ async function run() {
           res.send(result);
         } catch (error) {
           console.error("Error in /api/v1/auth/requested-meal/id:", error);
+          res.status(500).send({ error: "Internal Server Error" });
+        }
+      }
+    );
+
+    // Delete Meal
+    app.delete(
+      "/api/v1/meal/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const id = req.params.id;
+          const query = { _id: new ObjectId(id) };
+          const result = await mealCollection.deleteOne(query);
+          res.send(result);
+        } catch (error) {
+          console.error("Error in /api/v1/meal/id:", error);
           res.status(500).send({ error: "Internal Server Error" });
         }
       }
