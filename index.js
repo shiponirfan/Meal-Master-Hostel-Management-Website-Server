@@ -38,7 +38,7 @@ const verifyToken = (req, res, next) => {
     if (err) {
       return res.status(401).send({ message: "Unauthorized" });
     }
-    req.userJwt = decoded;
+    req.decoded = decoded;
     next();
   });
 };
@@ -151,7 +151,7 @@ async function run() {
     app.get("/api/v1/auth/user/:email", verifyToken, async (req, res) => {
       try {
         const email = req.params.email;
-        if (email !== req.userJwt.email) {
+        if (email !== req.decoded.email) {
           return res.status(403).send({ message: "forbidden access" });
         }
         const query = { userEmail: email };
@@ -192,6 +192,26 @@ async function run() {
         res.status(500).send({ error: "Internal Server Error" });
       }
     });
+
+    // Get Request Meal
+    app.get(
+      "/api/v1/auth/requested-meal/:email",
+      verifyToken,
+      async (req, res) => {
+        try {
+          const email = req.params.email;
+          if (email !== req.decoded.email) {
+            return res.status(403).send({ message: "forbidden access" });
+          }
+          const query = { userEmail: email };
+          const result = await requestedCollection.find(query).toArray();
+          res.send(result);
+        } catch (error) {
+          console.error("Error in /api/v1/auth/requested-meal/email:", error);
+          res.status(500).send({ error: "Internal Server Error" });
+        }
+      }
+    );
 
     // Update Meal Like Count
     app.post("/api/v1/meal/like-update/:id", verifyToken, async (req, res) => {
@@ -265,6 +285,26 @@ async function run() {
         res.status(500).send({ error: "Internal Server Error" });
       }
     });
+
+    // Get Payment History
+    app.get(
+      "/api/v1/auth/payments-history/:email",
+      verifyToken,
+      async (req, res) => {
+        try {
+          const email = req.params.email;
+          if (email !== req.decoded.email) {
+            return res.status(403).send({ message: "forbidden access" });
+          }
+          const query = { email: email };
+          const result = await paymentCollection.find(query).toArray();
+          res.send(result);
+        } catch (error) {
+          console.error("Error in /api/v1/auth/payments-history/email:", error);
+          res.status(500).send({ error: "Internal Server Error" });
+        }
+      }
+    );
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
