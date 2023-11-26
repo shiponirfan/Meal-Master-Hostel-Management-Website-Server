@@ -4,6 +4,7 @@ const cors = require("cors");
 require("dotenv").config();
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const jwt = require("jsonwebtoken");
+const stripe = require("stripe")(process.env.STRIPE_SECRET_KEY);
 const cookieParser = require("cookie-parser");
 const port = process.env.PORT || 5000;
 
@@ -49,6 +50,12 @@ async function run() {
     // All Collection
     const mealCollection = client.db("mealMasterDB").collection("meals");
     const userCollection = client.db("mealMasterDB").collection("users");
+    const paymentCollection = client
+      .db("mealMasterDB")
+      .collection("payments-history");
+    const requestedCollection = client
+      .db("mealMasterDB")
+      .collection("requested-meals");
     const membershipCollection = client
       .db("mealMasterDB")
       .collection("membership");
@@ -140,6 +147,23 @@ async function run() {
       }
     });
 
+    // Get User With User Role
+    app.get("/api/v1/auth/user/:email", verifyToken, async (req, res) => {
+      try {
+        const email = req.params.email;
+        if (email !== req.userJwt.email) {
+          return res.status(403).send({ message: "forbidden access" });
+        }
+        const query = { userEmail: email };
+        const option = { projection: { _id: 0, userRole: 1, userBadge: 1 } };
+        const user = await userCollection.findOne(query, option);
+        res.send(user);
+      } catch (error) {
+        console.error("Error in /api/v1/auth/users/email:", error);
+        res.status(500).send({ error: "Internal Server Error" });
+      }
+    });
+
     // Add User With User Role
     app.post("/api/v1/auth/users", async (req, res) => {
       try {
@@ -153,6 +177,18 @@ async function run() {
         res.send(result);
       } catch (error) {
         console.error("Error in /api/v1/membership:", error);
+        res.status(500).send({ error: "Internal Server Error" });
+      }
+    });
+
+    // Post Request Meal
+    app.post("/api/v1/requested-meal", verifyToken, async (req, res) => {
+      try {
+        const query = req.body;
+        const result = await requestedCollection.insertOne(query);
+        res.send(result);
+      } catch (error) {
+        console.error("Error in /api/v1/requested-meal:", error);
         res.status(500).send({ error: "Internal Server Error" });
       }
     });
@@ -171,6 +207,61 @@ async function run() {
         res.send(result);
       } catch (error) {
         console.error("Error in /api/v1/meal/like-update:", error);
+        res.status(500).send({ error: "Internal Server Error" });
+      }
+    });
+
+    // Update User Badge
+    app.post("/api/v1/auth/user/:email", verifyToken, async (req, res) => {
+      try {
+        const { badge } = req.body;
+        console.log("User badge", badge);
+        const email = req.params.email;
+        const query = { userEmail: email };
+        const updateBadge = {
+          $set: {
+            userBadge: badge,
+          },
+        };
+        const result = await userCollection.updateOne(query, updateBadge);
+        res.send(result);
+      } catch (error) {
+        console.error("Error in /api/v1/auth/user:", error);
+        res.status(500).send({ error: "Internal Server Error" });
+      }
+    });
+
+    // Create Stripe Payment Intent
+    app.post(
+      "/api/v1/auth/create-payment-intent",
+      verifyToken,
+      async (req, res) => {
+        try {
+          const { price } = req.body;
+          const amount = parseInt(price * 100);
+          const paymentIntent = await stripe.paymentIntents.create({
+            amount: amount,
+            currency: "usd",
+            payment_method_types: ["card"],
+          });
+          res.send({
+            clientSecret: paymentIntent.client_secret,
+          });
+        } catch (error) {
+          console.error("Error in /api/v1/auth/create-payment-intent:", error);
+          res.status(500).send({ error: "Internal Server Error" });
+        }
+      }
+    );
+
+    // Save Stripe Payment History
+    app.post("/api/v1/auth/payments-history", verifyToken, async (req, res) => {
+      try {
+        const query = req.body;
+        const result = await paymentCollection.insertOne(query);
+        res.send(result);
+      } catch (error) {
+        console.error("Error in /api/v1/auth/payments-history:", error);
         res.status(500).send({ error: "Internal Server Error" });
       }
     });
