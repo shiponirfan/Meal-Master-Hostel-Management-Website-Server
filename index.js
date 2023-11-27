@@ -298,73 +298,103 @@ async function run() {
     );
 
     // Get Request Meal
-    app.get(
-      "/api/v1/auth/requested-meal/:email",
-      verifyToken,
-      async (req, res) => {
-        try {
-          const email = req.params.email;
+    app.get("/api/v1/auth/requested-meal/", verifyToken, async (req, res) => {
+      try {
+        let userEmail = {};
+        const email = req.query.email;
+
+        if (email) {
           if (email !== req.decoded.email) {
             return res.status(403).send({ message: "forbidden access" });
           }
+          userEmail = { userEmail: email };
+        }
+        if (!email) {
+          const decodedEmail = req.decoded.email;
+          const adminQuery = { userEmail: decodedEmail };
+          const user = await userCollection.findOne(adminQuery);
+          const isAdmin = user?.userRole === "Admin";
+          if (!isAdmin) {
+            return res.status(403).send({ message: "forbidden access" });
+          }
+        }
+        const userResult = await requestedCollection.find(userEmail).toArray();
 
-          const userEmail = { userEmail: email };
-          const userResult = await requestedCollection
-            .find(userEmail)
-            .toArray();
+        const mealId = userResult.map((id) => new ObjectId(id.mealId));
+        const mealQuery = { _id: { $in: mealId } };
 
-          const mealId = userResult.map((id) => new ObjectId(id.mealId));
-          const mealQuery = { _id: { $in: mealId } };
+        const options = {
+          projection: { _id: 1, mealTitle: 1, likes: 1, reviews: 1 },
+        };
+        const getMeal = await mealCollection.find(mealQuery, options).toArray();
 
-          const options = {
-            projection: { _id: 1, mealTitle: 1, likes: 1, reviews: 1 },
-          };
-          const getMeal = await mealCollection
-            .find(mealQuery, options)
-            .toArray();
-
-          const requestedMealStatusMap = {};
-          userResult.forEach((item) => {
-            const mealIdString = item.mealId.toString();
-            if (!requestedMealStatusMap[mealIdString]) {
-              requestedMealStatusMap[mealIdString] = [];
-            }
-            requestedMealStatusMap[mealIdString].push({
-              requestedMealId: item._id,
-              status: item.status,
-            });
+        const requestedMealStatusMap = {};
+        userResult.forEach((item) => {
+          const mealIdString = item.mealId.toString();
+          if (!requestedMealStatusMap[mealIdString]) {
+            requestedMealStatusMap[mealIdString] = [];
+          }
+          requestedMealStatusMap[mealIdString].push({
+            requestedMealId: item._id,
+            status: item.status,
+            userName: item.userName,
+            userEmail: item.userEmail,
           });
+        });
 
-          const result = [];
-          getMeal.forEach((meal) => {
-            const mealIdString = meal._id.toString();
-            const requestedMealStatusArray =
-              requestedMealStatusMap[mealIdString] || [];
+        const result = [];
+        getMeal.forEach((meal) => {
+          const mealIdString = meal._id.toString();
+          const requestedMealStatusArray =
+            requestedMealStatusMap[mealIdString] || [];
 
-            requestedMealStatusArray.sort((a, b) => {
-              const customOrder = { Pending: 0, Delivered: 1 };
-              return customOrder[a.status] - customOrder[b.status];
-            });
-
-            requestedMealStatusArray.forEach((requestedMealStatus) => {
-              result.push({ ...meal, requestedMealStatus });
-            });
-          });
-          result.sort((a, b) => {
+          requestedMealStatusArray.sort((a, b) => {
             const customOrder = { Pending: 0, Delivered: 1 };
-            return (
-              customOrder[a.requestedMealStatus.status] -
-              customOrder[b.requestedMealStatus.status]
-            );
+            return customOrder[a.status] - customOrder[b.status];
           });
 
+          requestedMealStatusArray.forEach((requestedMealStatus) => {
+            result.push({ ...meal, requestedMealStatus });
+          });
+        });
+        result.sort((a, b) => {
+          const customOrder = { Pending: 0, Delivered: 1 };
+          return (
+            customOrder[a.requestedMealStatus.status] -
+            customOrder[b.requestedMealStatus.status]
+          );
+        });
+
+        res.send(result);
+      } catch (error) {
+        console.error("Error in /api/v1/auth/requested-meal/email:", error);
+        res.status(500).send({ error: "Internal Server Error" });
+      }
+    });
+
+    // Serve Meal Status Update
+    app.post(
+      "/api/v1/meal-serve/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const id = req.params.id;
+          const query = { _id: new ObjectId(id) };
+          const updateDoc = {
+            $set: {
+              status: "Delivered",
+            },
+          };
+          const result = await requestedCollection.updateOne(query, updateDoc);
           res.send(result);
         } catch (error) {
-          console.error("Error in /api/v1/auth/requested-meal/email:", error);
+          console.error("Error in /api/v1/meal-serve/id:", error);
           res.status(500).send({ error: "Internal Server Error" });
         }
       }
     );
+
     // Delete Request Meal
     app.delete(
       "/api/v1/auth/requested-meal/:id",
