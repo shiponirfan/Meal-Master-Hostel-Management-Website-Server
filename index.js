@@ -50,6 +50,7 @@ async function run() {
     // All Collection
     const mealCollection = client.db("mealMasterDB").collection("meals");
     const userCollection = client.db("mealMasterDB").collection("users");
+    const reviewCollection = client.db("mealMasterDB").collection("reviews");
     const upcomingMealCollection = client
       .db("mealMasterDB")
       .collection("upcoming-meals");
@@ -217,6 +218,7 @@ async function run() {
       }
     );
 
+    // Upcoming Meal
     app.post(
       "/api/v1/upcoming-meal",
       verifyToken,
@@ -330,6 +332,33 @@ async function run() {
       }
     });
 
+    // Get Reviews
+    app.get("/api/v1/reviews", async (req, res) => {
+      try {
+        const email = req.query.email;
+        let review = {};
+        if (email) {
+          review = { reviewerEmail: email };
+        }
+        const result = await reviewCollection.find(review).toArray();
+        res.send(result);
+      } catch (error) {
+        console.error("Error in /api/v1/reviews:", error);
+        res.status(500).send({ error: "Internal Server Error" });
+      }
+    });
+
+    // Post Reviews
+    app.post("/api/v1/reviews", verifyToken, async (req, res) => {
+      try {
+        const query = req.body;
+        const result = await reviewCollection.insertOne(query);
+        res.send(result);
+      } catch (error) {
+        console.error("Error in /api/v1/reviews:", error);
+        res.status(500).send({ error: "Internal Server Error" });
+      }
+    });
     // Post Request Meal
     app.post("/api/v1/requested-meal", verifyToken, async (req, res) => {
       try {
@@ -342,6 +371,25 @@ async function run() {
       }
     });
 
+    // Update Review
+    app.patch("/api/v1/updated-review/:id", verifyToken, async (req, res) => {
+      try {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+        const review = req.body;
+        const updateReview = {
+          $set: {
+            reviewDetails: review.reviewDetails,
+            reviewRating: review.reviewRating,
+          },
+        };
+        const result = await reviewCollection.updateOne(query, updateReview);
+        res.send(result);
+      } catch (error) {
+        console.error("Error in /api/v1/updated-review/id:", error);
+        res.status(500).send({ error: "Internal Server Error" });
+      }
+    });
     // Update Meal
     app.patch(
       "/api/v1/update-meal/:id",
@@ -483,6 +531,23 @@ async function run() {
       }
     );
 
+    // Delete Review
+    app.delete(
+      "/api/v1/auth/review-delete/:id",
+      verifyToken,
+      async (req, res) => {
+        try {
+          const id = req.params.id;
+          const query = { _id: new ObjectId(id) };
+          const result = await reviewCollection.deleteOne(query);
+          res.send(result);
+        } catch (error) {
+          console.error("Error in /api/v1/auth/review-delete/id:", error);
+          res.status(500).send({ error: "Internal Server Error" });
+        }
+      }
+    );
+
     // Delete Meal
     app.delete(
       "/api/v1/meal/:id",
@@ -500,6 +565,49 @@ async function run() {
         }
       }
     );
+
+    // Update Meal Review Count
+    app.post(
+      "/api/v1/meal/meal-review-update/:id",
+      verifyToken,
+      async (req, res) => {
+        try {
+          const id = req.params.id;
+          const query = { _id: new ObjectId(id) };
+          const updateReview = {
+            $inc: {
+              reviews: 1,
+            },
+          };
+          const result = await mealCollection.updateOne(query, updateReview);
+          res.send(result);
+        } catch (error) {
+          console.error("Error in /api/v1/meal/meal-review-update:", error);
+          res.status(500).send({ error: "Internal Server Error" });
+        }
+      }
+    );
+
+    // Update Review Like Count
+    app.post("/api/v1/review-like-update/:id", async (req, res) => {
+      try {
+        const id = req.params.id;
+        const query = { _id: new ObjectId(id) };
+        const updateReviewLike = {
+          $inc: {
+            reviewLikes: 1,
+          },
+        };
+        const result = await reviewCollection.updateOne(
+          query,
+          updateReviewLike
+        );
+        res.send(result);
+      } catch (error) {
+        console.error("Error in /api/v1/review-like-update:", error);
+        res.status(500).send({ error: "Internal Server Error" });
+      }
+    });
 
     // Update Meal Like Count
     app.post("/api/v1/meal/like-update/:id", verifyToken, async (req, res) => {
