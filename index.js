@@ -138,6 +138,49 @@ async function run() {
       }
     });
 
+    // All Upcoming Meals
+    app.get("/api/v1/upcoming-meals", async (req, res) => {
+      try {
+        let query = {};
+
+        // Filter By Meal Type
+        const mealType = req.query.mealType;
+        if (mealType) {
+          query.mealType = mealType;
+        }
+
+        // Search field
+        const mealTitle = req.query.mealTitle;
+        if (mealTitle) {
+          query.mealTitle = { $regex: mealTitle, $options: "i" };
+        }
+
+        // Sort By Price
+        const sort = req.query.sort;
+        const sortValue = {};
+        if (sort) {
+          sortValue.likes = sort;
+        }
+
+        // Pagination Options
+        const pages = parseInt(req.query.pages);
+        const limit = parseInt(req.query.limit);
+        const skip = (pages - 1) * limit;
+
+        const result = await upcomingMealCollection
+          .find(query)
+          .skip(skip)
+          .limit(limit)
+          .sort(sortValue)
+          .toArray();
+
+        res.send({ result });
+      } catch (error) {
+        console.error("Error in /api/v1/upcoming-meals:", error);
+        res.status(500).send({ error: "Internal Server Error" });
+      }
+    });
+
     // Add Meal
     app.post("/api/v1/meal", verifyToken, verifyAdmin, async (req, res) => {
       try {
@@ -149,7 +192,31 @@ async function run() {
         res.status(500).send({ error: "Internal Server Error" });
       }
     });
-    // Add Upcoming Meal
+    // Publish Upcoming Meal
+    app.post(
+      "/api/v1/upcoming-meal-publish/:id",
+      verifyToken,
+      verifyAdmin,
+      async (req, res) => {
+        try {
+          const id = req.params.id;
+          const findMeal = { _id: new ObjectId(id) };
+          const getMeal = await upcomingMealCollection.findOne(findMeal);
+          const insertToAllMeals = await mealCollection.insertOne(getMeal);
+
+          if (insertToAllMeals.insertedId) {
+            const deleteMeal = await upcomingMealCollection.deleteOne(findMeal);
+            if (deleteMeal.deletedCount > 0) {
+              res.send(deleteMeal);
+            }
+          }
+        } catch (error) {
+          console.error("Error in /api/v1/upcoming-meal", error);
+          res.status(500).send({ error: "Internal Server Error" });
+        }
+      }
+    );
+
     app.post(
       "/api/v1/upcoming-meal",
       verifyToken,
