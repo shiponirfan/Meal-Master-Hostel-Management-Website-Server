@@ -335,8 +335,8 @@ async function run() {
     // Get Reviews
     app.get("/api/v1/reviews", async (req, res) => {
       try {
-        const email = req.query.email;
         let review = {};
+        const email = req.query.email;
         if (email) {
           review = { reviewerEmail: email };
         }
@@ -413,10 +413,11 @@ async function run() {
     );
 
     // Get Request Meal
-    app.get("/api/v1/auth/requested-meal/", verifyToken, async (req, res) => {
+    app.get("/api/v1/auth/requested-meal", verifyToken, async (req, res) => {
       try {
         let userEmail = {};
         const email = req.query.email;
+        const searchQuery = req.query.search;
 
         if (email) {
           if (email !== req.decoded.email) {
@@ -433,6 +434,16 @@ async function run() {
             return res.status(403).send({ message: "forbidden access" });
           }
         }
+
+        if (searchQuery) {
+          userEmail = {
+            $or: [
+              { userName: { $regex: new RegExp(searchQuery, "i") } },
+              { userEmail: { $regex: new RegExp(searchQuery, "i") } },
+            ],
+          };
+        }
+
         const userResult = await requestedCollection.find(userEmail).toArray();
 
         const mealId = userResult.map((id) => new ObjectId(id.mealId));
@@ -480,7 +491,18 @@ async function run() {
           );
         });
 
-        res.send(result);
+        // Pagination
+        const page = parseInt(req.query.page) || 1;
+        const perPage = parseInt(req.query.perPage) || 10;
+        const skip = (page - 1) * perPage;
+        const paginatedResult = result.slice(skip, skip + perPage);
+        res.send({
+          totalItems: result.length,
+          totalPages: Math.ceil(result.length / perPage),
+          currentPage: page,
+          perPage: perPage,
+          data: paginatedResult,
+        });
       } catch (error) {
         console.error("Error in /api/v1/auth/requested-meal/email:", error);
         res.status(500).send({ error: "Internal Server Error" });
