@@ -132,7 +132,10 @@ async function run() {
           .sort(sortValue)
           .toArray();
 
-        res.send({ result });
+        const totalItemsCount = await mealCollection.countDocuments(query);
+        const totalPagesCount = Math.ceil(totalItemsCount / limit);
+
+        res.send({ result, totalPagesCount });
       } catch (error) {
         console.error("Error in /api/v1/meals:", error);
         res.status(500).send({ error: "Internal Server Error" });
@@ -175,7 +178,13 @@ async function run() {
           .sort(sortValue)
           .toArray();
 
-        res.send({ result });
+        // Total Number Of Pages
+        const totalItemsCount = await upcomingMealCollection.countDocuments(
+          query
+        );
+        const totalPagesCount = Math.ceil(totalItemsCount / limit);
+
+        res.send({ result, totalPagesCount });
       } catch (error) {
         console.error("Error in /api/v1/upcoming-meals:", error);
         res.status(500).send({ error: "Internal Server Error" });
@@ -283,8 +292,31 @@ async function run() {
       verifyAdmin,
       async (req, res) => {
         try {
-          const result = await userCollection.find().toArray();
-          res.send(result);
+          let query = {};
+
+          const searchQuery = req.query.searchQuery;
+          if (searchQuery) {
+            query.$or = [
+              { userName: { $regex: new RegExp(searchQuery, "i") } },
+              { userEmail: { $regex: new RegExp(searchQuery, "i") } },
+            ];
+          }
+
+          // Pagination
+          const pages = parseInt(req.query.pages);
+          const limit = parseInt(req.query.limit);
+          const skip = (pages - 1) * limit;
+
+          const result = await userCollection
+            .find(query)
+            .skip(skip)
+            .limit(limit)
+            .toArray();
+
+          const totalItemsCount = await userCollection.countDocuments(query);
+          const totalPagesCount = Math.ceil(totalItemsCount / limit);
+
+          res.send({ result, totalPagesCount });
         } catch (error) {
           console.error("Error in /api/v1/auth/users:", error);
           res.status(500).send({ error: "Internal Server Error" });
@@ -340,8 +372,33 @@ async function run() {
         if (email) {
           review = { reviewerEmail: email };
         }
-        const result = await reviewCollection.find(review).toArray();
-        res.send(result);
+
+        // Pagination
+        const pages = parseInt(req.query.pages);
+        const limit = parseInt(req.query.limit);
+        const skip = (pages - 1) * limit;
+
+        const sortByRating = req.query.sortByRating;
+        const sortByLikes = req.query.sortByLikes;
+        const sortValue = {};
+        if (sortByRating) {
+          sortValue.reviewRating = sortByRating;
+        }
+        if (sortByLikes) {
+          sortValue.reviewLikes = sortByLikes;
+        }
+
+        const result = await reviewCollection
+          .find(review)
+          .skip(skip)
+          .limit(limit)
+          .sort(sortValue)
+          .toArray();
+
+        const totalItemsCount = await reviewCollection.countDocuments(review);
+        const totalPagesCount = Math.ceil(totalItemsCount / limit);
+
+        res.send({ result, totalPagesCount });
       } catch (error) {
         console.error("Error in /api/v1/reviews:", error);
         res.status(500).send({ error: "Internal Server Error" });
@@ -424,8 +481,7 @@ async function run() {
             return res.status(403).send({ message: "forbidden access" });
           }
           userEmail = { userEmail: email };
-        }
-        if (!email) {
+        } else {
           const decodedEmail = req.decoded.email;
           const adminQuery = { userEmail: decodedEmail };
           const user = await userCollection.findOne(adminQuery);
