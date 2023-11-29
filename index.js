@@ -245,7 +245,7 @@ async function run() {
     );
 
     // Get Single Meal
-    app.get("/api/v1/meal/:id", verifyToken, async (req, res) => {
+    app.get("/api/v1/meal/:id", async (req, res) => {
       try {
         const id = req.params.id;
         const query = { _id: new ObjectId(id) };
@@ -333,6 +333,12 @@ async function run() {
         try {
           const id = req.params.id;
           const filter = { _id: new ObjectId(id) };
+
+          const existingUser = await userCollection.findOne(filter);
+          if (existingUser && existingUser.userRole === "Admin") {
+            return res.send({ message: "User is already an admin." });
+          }
+
           const updateDoc = {
             $set: {
               userRole: "Admin",
@@ -360,6 +366,21 @@ async function run() {
         res.send(result);
       } catch (error) {
         console.error("Error in /api/v1/membership:", error);
+        res.status(500).send({ error: "Internal Server Error" });
+      }
+    });
+
+    // Get Reviews By Meal
+    app.get("/api/v1/reviews-by-meal/:meal", async (req, res) => {
+      try {
+        const meal = req.params.meal;
+
+        let query = { mealId: meal };
+
+        const result = await reviewCollection.find(query).toArray();
+        res.send(result);
+      } catch (error) {
+        console.error("Error in /api/v1/reviews-by-meal:", error);
         res.status(500).send({ error: "Internal Server Error" });
       }
     });
@@ -499,7 +520,6 @@ async function run() {
             ],
           };
         }
-
         const userResult = await requestedCollection.find(userEmail).toArray();
 
         const mealId = userResult.map((id) => new ObjectId(id.mealId));
@@ -687,6 +707,42 @@ async function run() {
       }
     });
 
+    // Update Upcoming Meal Like Count
+    app.post(
+      "/api/v1/meal/upcoming-like-update/:id",
+      verifyToken,
+      async (req, res) => {
+        try {
+          const id = req.params.id;
+          const query = { _id: new ObjectId(id) };
+          const userId = req.decoded.email;
+
+          const hasLiked = await upcomingMealCollection.findOne({
+            _id: new ObjectId(id),
+            likedUsers: userId,
+          });
+          if (hasLiked) {
+            return res.send({ message: "Already Liked" });
+          }
+
+          const updateLike = {
+            $addToSet: { likedUsers: userId },
+            $inc: {
+              likes: 1,
+            },
+          };
+          const result = await upcomingMealCollection.updateOne(
+            query,
+            updateLike
+          );
+          res.send(result);
+        } catch (error) {
+          console.error("Error in /api/v1/meal/upcoming-like-update:", error);
+          res.status(500).send({ error: "Internal Server Error" });
+        }
+      }
+    );
+
     // Update Meal Like Count
     app.post("/api/v1/meal/like-update/:id", verifyToken, async (req, res) => {
       try {
@@ -709,7 +765,6 @@ async function run() {
     app.post("/api/v1/auth/user/:email", verifyToken, async (req, res) => {
       try {
         const { badge } = req.body;
-        console.log("User badge", badge);
         const email = req.params.email;
         const query = { userEmail: email };
         const updateBadge = {
@@ -761,24 +816,33 @@ async function run() {
     });
 
     // Get Payment History
-    app.get(
-      "/api/v1/auth/payments-history/:email",
-      verifyToken,
-      async (req, res) => {
-        try {
-          const email = req.params.email;
+    app.get("/api/v1/auth/payments-history", verifyToken, async (req, res) => {
+      try {
+        let query = {};
+        const email = req.query.email;
+        if (email) {
           if (email !== req.decoded.email) {
             return res.status(403).send({ message: "forbidden access" });
           }
-          const query = { email: email };
-          const result = await paymentCollection.find(query).toArray();
-          res.send(result);
-        } catch (error) {
-          console.error("Error in /api/v1/auth/payments-history/email:", error);
-          res.status(500).send({ error: "Internal Server Error" });
+          query = { email: email };
         }
+        else {
+          const decodedEmail = req.decoded.email;
+          const adminQuery = { userEmail: decodedEmail };
+          const user = await userCollection.findOne(adminQuery);
+          const isAdmin = user?.userRole === "Admin";
+          if (!isAdmin) {
+            return res.status(403).send({ message: "forbidden access" });
+          }
+        }
+
+        const result = await paymentCollection.find(query).toArray();
+        res.send(result);
+      } catch (error) {
+        console.error("Error in /api/v1/auth/payments-history/email:", error);
+        res.status(500).send({ error: "Internal Server Error" });
       }
-    );
+    });
 
     // Send a ping to confirm a successful connection
     await client.db("admin").command({ ping: 1 });
